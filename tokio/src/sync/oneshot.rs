@@ -620,6 +620,8 @@ impl<T> Sender<T> {
     /// # }
     /// ```
     pub fn send(mut self, t: T) -> Result<(), T> {
+        // Innerをtake
+        // moveするためmut selfにしてよい
         let inner = self.inner.take().unwrap();
 
         inner.value.with_mut(|ptr| unsafe {
@@ -633,6 +635,9 @@ impl<T> Sender<T> {
             *ptr = Some(t);
         });
 
+        // completeにセット
+        // 既にclosedになっていたらfalseがreturnされる
+        // その場合はErr
         if !inner.complete() {
             unsafe {
                 // SAFETY: The receiver will not access the `UnsafeCell` unless
@@ -871,6 +876,11 @@ impl<T> Sender<T> {
 impl<T> Drop for Sender<T> {
     fn drop(&mut self) {
         if let Some(inner) = self.inner.as_ref() {
+            // これは必要なの?
+            // sendでもおなじことをやっている
+            // -> sendせずにDropした場合もcompelteとして扱う
+            // recvのときにSenderがDropしたかどうかの判断をどうしているのか確認
+            // おそらくcompelte -> value.is_none
             inner.complete();
             #[cfg(all(tokio_unstable, feature = "tracing"))]
             self.resource_span.in_scope(|| {
@@ -1286,6 +1296,9 @@ impl<T> Future for Receiver<T> {
 
             res
         } else {
+            // ここにはたどり着くのか?
+            // .awaitしたらunreachable無きがする
+            // try_recvのときにたどりつく
             panic!("called after complete");
         };
 
@@ -1385,6 +1398,7 @@ impl<T> Inner<T> {
     fn close(&self) -> State {
         let prev = State::set_closed(&self.state);
 
+        // Wakerがセットされていて、まだデータを送っていない場合に起こす
         if prev.is_tx_task_set() && !prev.is_complete() {
             unsafe {
                 self.tx_task.with_task(Waker::wake_by_ref);

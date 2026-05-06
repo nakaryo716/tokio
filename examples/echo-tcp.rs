@@ -27,7 +27,7 @@ use tokio::net::TcpListener;
 use std::env;
 use std::error::Error;
 
-const DEFAULT_ADDR: &str = "127.0.0.1:8080";
+const DEFAULT_ADDR: &str = "0.0.0.0:3000";
 const BUFFER_SIZE: usize = 4096;
 
 #[tokio::main]
