@@ -13,6 +13,8 @@ cfg_rt! {
         ///
         /// This is wrapped in a type that may be empty when `tokio_unstable` is
         /// not enabled.
+        // NOTE:
+        // stdのLocationをWrapしたもの
         pub(crate) spawned_at: crate::runtime::task::SpawnLocation,
         _pd: PhantomData<&'a ()>,
     }

@@ -31,6 +31,8 @@ pub(super) struct HandleCell {
 ///
 /// [`Handle`]: crate::runtime::scheduler::Handle
 pub(crate) fn try_set_current(handle: &scheduler::Handle) -> Option<SetCurrentGuard> {
+    // None になるばあいはtry_withが失敗したとき
+    // そのときはRuntimeが死ぬ
     CONTEXT.try_with(|ctx| ctx.set_current(handle)).ok()
 }
 
@@ -47,6 +49,11 @@ where
 
 impl Context {
     pub(super) fn set_current(&self, handle: &scheduler::Handle) -> SetCurrentGuard {
+        // NOTE:
+        // 最初は`old_handle`はNone?
+        // TLSに保存されているContextがHandleを保持している
+        // 現在のRuntimeのHandleを渡す
+        // GuardがDropしたら戻してもらえる
         let old_handle = self.current.handle.borrow_mut().replace(handle.clone());
         let depth = self.current.depth.get();
 

@@ -37,6 +37,10 @@ where
     F: FnOnce(&mut BlockingRegionGuard) -> R,
 {
     let maybe_guard = CONTEXT.with(|c| {
+        // NOTE:
+        // 二重では入らない
+        // maybe_gurad: EnterRUntimeGuardはDropすると
+        // Context(TLS)はnot_enteredになる
         if c.runtime.get().is_entered() {
             None
         } else {
@@ -55,6 +59,9 @@ where
 
             Some(EnterRuntimeGuard {
                 blocking: BlockingRegionGuard::new(),
+                // NOTE:
+                // handle.enter()のときに預けたHandleと一致する
+                // でもこのhandleは結局つかっていないような...
                 handle: c.set_current(handle),
                 old_seed,
             })

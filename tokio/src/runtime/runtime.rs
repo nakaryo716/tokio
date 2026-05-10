@@ -339,7 +339,12 @@ impl Runtime {
     #[track_caller]
     pub fn block_on<F: Future>(&self, future: F) -> F::Output {
         let fut_size = mem::size_of::<F>();
+        // stack overflowにならないようにする
+        // 大きいサイズのタスクはheapで確保
         if fut_size > BOX_FUTURE_THRESHOLD {
+            // NOTE:
+            // SpawnMetaはタスクの名前、size, コードのどこで生まれたかを保持する
+            // メタ情報
             self.block_on_inner(Box::pin(future), SpawnMeta::new_unnamed(fut_size))
         } else {
             self.block_on_inner(future, SpawnMeta::new_unnamed(fut_size))
@@ -348,6 +353,8 @@ impl Runtime {
 
     #[track_caller]
     fn block_on_inner<F: Future>(&self, future: F, _meta: SpawnMeta<'_>) -> F::Output {
+        // NOTE:
+        // trace用
         #[cfg(all(
             tokio_unstable,
             feature = "taskdump",
@@ -365,9 +372,15 @@ impl Runtime {
             crate::runtime::task::Id::next().as_u64(),
         );
 
+        // NOTE:
+        // 現在のSchedulerのhandleをTLSに置く
+        // Context(TLS)でSchedulerのHandleを置くメリットはまだわからない
         let _enter = self.enter();
 
         match &self.scheduler {
+            // NOTE:
+            // exec: scheduler::CurrentThread
+            // TLSにおいたhandleと一緒のものをblock_onに渡している
             Scheduler::CurrentThread(exec) => exec.block_on(&self.handle.inner, future),
             #[cfg(feature = "rt-multi-thread")]
             Scheduler::MultiThread(exec) => exec.block_on(&self.handle.inner, future),

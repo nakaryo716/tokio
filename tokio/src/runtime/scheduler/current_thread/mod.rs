@@ -190,6 +190,10 @@ impl CurrentThread {
     pub(crate) fn block_on<F: Future>(&self, handle: &scheduler::Handle, future: F) -> F::Output {
         pin!(future);
 
+        // NOTE:
+        // すでにruntime-contextに入っていないかを確認し、**実行**
+        // blockingはいまいちわからない
+        // Context(TLS)をEnterRuntimeにセット
         crate::runtime::context::enter_runtime(handle, false, |blocking| {
             let handle = handle.as_current_thread();
 
@@ -197,7 +201,14 @@ impl CurrentThread {
             // there, otherwise, lets select on a notification that the core is
             // available or the future is complete.
             loop {
+                // NOTE:
+                // take_coreでCoreをtake&ShcedulerのHandleをパッキングして
+                // CoreGuardを作成
                 if let Some(core) = self.take_core(handle) {
+                    // NOTE:
+                    // 実行するスレッドIDをハンドルに書き込む
+                    // なぜthreadIDをhandleにおいたのか？
+                    // おそらくTLS上もArc<Handle>を参照しているのが関係してそう
                     handle
                         .shared
                         .worker_metrics
@@ -762,7 +773,17 @@ struct CoreGuard<'a> {
 impl CoreGuard<'_> {
     #[track_caller]
     fn block_on<F: Future>(self, future: F) -> F::Output {
+        // NOTE:
+        // 実行
+        // ContextとCoreをSelfから取り出してTLSにセット
+        // クロージャを実行
+        // mut core, contextはそれぞれCoreGuard(Self)のもの
         let ret = self.enter(|mut core, context| {
+            // NEXT: クロージャの中から
+            // NOTE:
+            // ここからむずかしそう
+            // QUESTION:
+            // Wakerの作り方(Handleをもとにつくっている)
             let waker = Handle::waker_ref(&context.handle);
             let mut cx = std::task::Context::from_waker(&waker);
 
@@ -773,8 +794,12 @@ impl CoreGuard<'_> {
             'outer: loop {
                 let handle = &context.handle;
 
+                // QUESTION:
+                // what is reset_woken?
                 if handle.reset_woken() {
                     let (c, res) = context.enter(core, || {
+                        // QUESTION:
+                        // budgetが何なのか
                         crate::task::coop::budget(|| future.as_mut().poll(&mut cx))
                     });
 
@@ -862,6 +887,9 @@ impl CoreGuard<'_> {
         let core = context.core.borrow_mut().take().expect("core missing");
 
         // Call the closure and place `core` back
+        // NOTE:
+        // set_schedulerは引数のContextをTLSに置き換える
+        // 関数が実行し終わったら前のContextに戻す
         let (core, ret) = context::set_scheduler(&self.context, || f(core, context));
 
         *context.core.borrow_mut() = Some(core);
