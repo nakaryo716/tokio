@@ -345,6 +345,7 @@ impl Runtime {
         if fut_size > BOX_FUTURE_THRESHOLD {
             self.block_on_inner(Box::pin(future), SpawnMeta::new_unnamed(fut_size))
         } else {
+            println!(">> Runtime::block_on, else-case");
             self.block_on_inner(future, SpawnMeta::new_unnamed(fut_size))
         }
     }

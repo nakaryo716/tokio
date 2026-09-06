@@ -48,6 +48,7 @@ where
 impl Context {
     pub(super) fn set_current(&self, handle: &scheduler::Handle) -> SetCurrentGuard {
         let old_handle = self.current.handle.borrow_mut().replace(handle.clone());
+        println!(">> Context::set_current, old_handle: {:?}", old_handle);
         let depth = self.current.depth.get();
 
         assert!(depth != usize::MAX, "reached max `enter` depth");

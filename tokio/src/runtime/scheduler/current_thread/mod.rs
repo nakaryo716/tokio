@@ -208,12 +208,14 @@ impl CurrentThread {
             // available or the future is complete.
             loop {
                 if let Some(core) = self.take_core(handle) {
+                    println!(">> CurrentThread::block_on, take_core-> Some");
                     handle
                         .shared
                         .worker_metrics
                         .set_thread_id(thread::current().id());
                     return core.block_on(future);
                 } else {
+                    println!(">> CurrentThread::block_on, take_core-> None");
                     let notified = self.notify.notified();
                     pin!(notified);
 
@@ -806,6 +808,10 @@ impl Wake for Handle {
 /// `CurrentThread`, even if the future panics.
 struct CoreGuard<'a> {
     context: scheduler::Context,
+
+    // NOTE:
+    // ドロップする際にContextに保持している、奪ったCoreを
+    // 返すためにShcedulerの借用がある
     scheduler: &'a CurrentThread,
 }
 
@@ -847,6 +853,7 @@ impl CoreGuard<'_> {
 
                     let task = match entry {
                         Some(entry) => entry,
+                        // check io-driver and queue some tasks can execute
                         None => {
                             core.metrics.end_processing_scheduled_tasks();
 

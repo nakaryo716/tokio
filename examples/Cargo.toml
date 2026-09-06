@@ -113,5 +113,9 @@ path = "dump.rs"
 name = "prewarm-fd-table"
 path = "prewarm-fd-table.rs"
 
+[[example]]
+name ="sandbox"
+path = "sandbox.rs"
+
 [lints]
 workspace = true
