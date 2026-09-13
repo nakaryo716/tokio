@@ -200,6 +200,8 @@ impl CurrentThread {
     pub(crate) fn block_on<F: Future>(&self, handle: &scheduler::Handle, future: F) -> F::Output {
         pin!(future);
 
+        // NOTE:
+        // TLS内のStatusをEnteredに変更 & TLS内のhandleを最新のものにreplace & クロージャ実行
         crate::runtime::context::enter_runtime(handle, false, |blocking| {
             let handle = handle.as_current_thread();
 
@@ -207,6 +209,8 @@ impl CurrentThread {
             // there, otherwise, lets select on a notification that the core is
             // available or the future is complete.
             loop {
+                // NOTE:
+                // CurrentThreadのCoreの所有権を奪う(take method)
                 if let Some(core) = self.take_core(handle) {
                     println!(">> CurrentThread::block_on, take_core-> Some");
                     handle
@@ -811,13 +815,20 @@ struct CoreGuard<'a> {
 
     // NOTE:
     // ドロップする際にContextに保持している、奪ったCoreを
-    // 返すためにShcedulerの借用がある
+    // 返すためにSchedulerの借用がある
     scheduler: &'a CurrentThread,
 }
 
 impl CoreGuard<'_> {
     #[track_caller]
     fn block_on<F: Future>(self, future: F) -> F::Output {
+        // NOTE:
+        // CoreGuard::enterの処理
+        // - CoreGuard::ContextのCoreを奪う
+        // - ContextをTLSに置く(Contextの中身は{core: None, handle: Handle})
+        // - クロージャを実行(Coreを渡す)
+        // - 状態を戻す(TLS & CoreをSchedulerに戻す)
+        // - クロージャの戻り値を返す
         let ret = self.enter(|mut core, context| {
             let waker = Handle::waker_ref(&context.handle);
             let mut cx = std::task::Context::from_waker(&waker);
@@ -829,7 +840,13 @@ impl CoreGuard<'_> {
             'outer: loop {
                 let handle = &context.handle;
 
+                // NOTE:
+                // 起こされたThreadがblockしていたかを調べる & falseに設定
                 if handle.reset_woken() {
+                    // NOTE:
+                    // - TLSにCoreを渡す
+                    // - クロージャ実行
+                    // - CoreをTLSから戻す
                     let (c, res) = context.enter(core, || {
                         crate::task::coop::budget(|| future.as_mut().poll(&mut cx))
                     });
@@ -849,6 +866,10 @@ impl CoreGuard<'_> {
 
                     core.tick();
 
+                    // NOTE:
+                    // Taskを取ってくる
+                    // remoteの場合はhandleのshared.injectから取ってくる
+                    // localの場合はcoreのtasksから取ってくる
                     let entry = core.next_task(handle);
 
                     let task = match entry {
@@ -857,6 +878,9 @@ impl CoreGuard<'_> {
                         None => {
                             core.metrics.end_processing_scheduled_tasks();
 
+                            // NOTE:
+                            // taskが存在する場合はDuration 0 msで待機
+                            // 存在しない場合はthread block(mioで待機)
                             core = if context.has_pending_work(&core) {
                                 context.park_yield(core, handle)
                             } else {
@@ -872,6 +896,9 @@ impl CoreGuard<'_> {
 
                     let task = context.handle.shared.owned.assert_owner(task);
 
+                    // NOTE:
+                    // ここでtaskをpoll
+                    // 内部ではVTableを弄ったりしている
                     let c = context.run_task(task, core);
 
                     core = c;
@@ -902,12 +929,14 @@ impl CoreGuard<'_> {
     where
         F: FnOnce(Box<Core>, &Context) -> (Box<Core>, R),
     {
+        // current_thread::Context
         let context = self.context.expect_current_thread();
 
         // Remove `core` from `context` to pass into the closure.
         let core = context.core.borrow_mut().take().expect("core missing");
 
         // Call the closure and place `core` back
+        // self.context -> scheduler::Context
         let (core, ret) = context::set_scheduler(&self.context, || f(core, context));
 
         *context.core.borrow_mut() = Some(core);

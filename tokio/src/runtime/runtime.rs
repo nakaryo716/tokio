@@ -341,6 +341,8 @@ impl Runtime {
     /// ```
     #[track_caller]
     pub fn block_on<F: Future>(&self, future: F) -> F::Output {
+        // NOTE:
+        // futureのsizeをしらべて、heapに置くか判断
         let fut_size = mem::size_of::<F>();
         if fut_size > BOX_FUTURE_THRESHOLD {
             self.block_on_inner(Box::pin(future), SpawnMeta::new_unnamed(fut_size))
@@ -374,6 +376,8 @@ impl Runtime {
             crate::runtime::task::Id::next().as_u64(),
         );
 
+        // NOTE:
+        // schedulerのHandleをTLSに置く
         let _enter = self.enter();
 
         match &self.scheduler {
