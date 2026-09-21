@@ -96,7 +96,19 @@ impl<S: 'static> OwnedTasks<S> {
         T: Future + Send + 'static,
         T::Output: Send + 'static,
     {
+        // NOTE:
+        // taskの作成
+        // task, notified, joinは結局、同じrawタスクへのptr
+        // - task -> shared ownedtasksに追加する用
+        // - notified -> scheduling用
+        // - join -> ユーザがawaitする用
         let (task, notified, join) = super::new_task(task, scheduler, id, spawned_at);
+
+        // NOTE:
+        //　shared ownedtasksへ追加する
+        // taskを追加している
+        // notifiedを使ってなにかやっているわけではない
+        // taskがownedtasksに追加されたら、notifiedをそのまま返している
         let notified = unsafe { self.bind_inner(task, notified) };
         (join, notified)
     }

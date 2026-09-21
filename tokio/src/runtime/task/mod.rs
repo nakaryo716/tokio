@@ -344,6 +344,7 @@ cfg_rt! {
         T: Future + 'static,
         T::Output: 'static,
     {
+        // CHECK
         let raw = RawTask::new::<T, S>(
             task,
             scheduler,

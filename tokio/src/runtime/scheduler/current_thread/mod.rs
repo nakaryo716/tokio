@@ -515,6 +515,9 @@ impl Handle {
         F: crate::future::Future + Send + 'static,
         F::Output: Send + 'static,
     {
+        // NOTE:
+        // taskを作成している
+        // handle系を返している
         let (handle, notified) = me.shared.owned.bind(future, me.clone(), id, spawned_at);
 
         me.task_hooks.spawn(&TaskMeta {
@@ -525,6 +528,7 @@ impl Handle {
             _phantom: Default::default(),
         });
 
+        // taskをlocalまたはremote queueにpush
         if let Some(notified) = notified {
             me.schedule(notified);
         }
@@ -722,7 +726,18 @@ impl Schedule for Arc<Handle> {
             ));
         }
 
+        // NOTE:
+        // - TLSのContextを見に行く
+        // - RuntimeEnteredになっていたらSomeでContextを渡す
+        // - block_on実行中のtask.run()を意味している
         context::with_scheduler(|maybe_cx| match maybe_cx {
+            // NOTE:
+            // - block_onのfutureのpoll時にTLSにContextを置いていた(block_onのtask.runの時も)
+            // - 同じptrか確認する(同じRuntimeかどうか)
+            //  - ptrが違うケース
+            //   - rtが2つあり、rt1のhandle.spawnをrt2.block_onで実行
+            //   - block_on外からのspawn
+            //   - 別threadからのspawn
             Some(CurrentThread(cx)) if Arc::ptr_eq(self, &cx.handle) => {
                 let mut core = cx.core.borrow_mut();
 

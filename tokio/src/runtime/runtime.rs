@@ -246,6 +246,12 @@ impl Runtime {
         F: Future + Send + 'static,
         F::Output: Send + 'static,
     {
+        // NOTE:
+        // Runtime::spawn全体の流れ
+        // - futureをtaskに変換
+        // - shared OwnedTasksにpush
+        // - TLSのContextを見に行く
+        // - local or remote queueにpush
         let fut_size = mem::size_of::<F>();
         if fut_size > BOX_FUTURE_THRESHOLD {
             self.handle
